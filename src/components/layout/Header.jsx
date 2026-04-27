@@ -6,6 +6,7 @@ import { createPageUrl } from "@/utils";
 import { User, Heart, Star, LayoutList, LogOut } from 'lucide-react';
 import { cn } from "@/lib/utils";
 import AlertsPopover from '@/components/layout/AlertsPopover.jsx';
+import LoginModal from '@/components/auth/LoginModal';
 
 const CATEGORIES = [
   { id: 'all',          label: 'Todos',        active: 'bg-zinc-900 text-white',  inactive: 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100' },
@@ -22,7 +23,8 @@ export default function Header({ selectedCategory = 'all', onCategoryChange }) {
     db.auth.me().then(setUser).catch(() => setUser(null));
   }, []);
 
-  const handleLogin = () => db.auth.redirectToLogin(window.location.href);
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const handleLogin = () => setShowLoginModal(true);
   const handleLogout = () => db.auth.logout('/');
 
   return (
@@ -103,5 +105,11 @@ export default function Header({ selectedCategory = 'all', onCategoryChange }) {
         </div>
       </div>
     </header>
+
+    <LoginModal
+      open={showLoginModal}
+      onClose={() => setShowLoginModal(false)}
+      onSuccess={() => { setShowLoginModal(false); db.auth.me().then(setUser).catch(() => setUser(null)); }}
+    />
   );
 }
