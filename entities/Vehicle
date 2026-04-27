@@ -1,0 +1,184 @@
+{
+  "name": "Vehicle",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "T\u00edtulo do an\u00fancio"
+    },
+    "brand": {
+      "type": "string",
+      "description": "Marca do ve\u00edculo"
+    },
+    "model": {
+      "type": "string",
+      "description": "Modelo do ve\u00edculo"
+    },
+    "version": {
+      "type": "string",
+      "description": "Vers\u00e3o espec\u00edfica"
+    },
+    "year_fabrication": {
+      "type": "number",
+      "description": "Ano de fabrica\u00e7\u00e3o"
+    },
+    "year_model": {
+      "type": "number",
+      "description": "Ano do modelo"
+    },
+    "price": {
+      "type": "number",
+      "description": "Pre\u00e7o em reais"
+    },
+    "mileage": {
+      "type": "number",
+      "description": "Quilometragem"
+    },
+    "fuel": {
+      "type": "string",
+      "enum": [
+        "gasolina",
+        "etanol",
+        "flex",
+        "diesel",
+        "eletrico",
+        "hibrido"
+      ],
+      "description": "Tipo de combust\u00edvel"
+    },
+    "transmission": {
+      "type": "string",
+      "enum": [
+        "manual",
+        "automatico",
+        "automatizado",
+        "cvt"
+      ],
+      "description": "Tipo de c\u00e2mbio"
+    },
+    "color": {
+      "type": "string",
+      "description": "Cor do ve\u00edculo"
+    },
+    "doors": {
+      "type": "number",
+      "description": "N\u00famero de portas"
+    },
+    "engine": {
+      "type": "string",
+      "description": "Motoriza\u00e7\u00e3o (ex: 2.0 Turbo)"
+    },
+    "horsepower": {
+      "type": "number",
+      "description": "Pot\u00eancia em cavalos"
+    },
+    "torque": {
+      "type": "number",
+      "description": "Torque em kgfm"
+    },
+    "acceleration_0_100": {
+      "type": "number",
+      "description": "Acelera\u00e7\u00e3o 0-100 km/h em segundos"
+    },
+    "top_speed": {
+      "type": "number",
+      "description": "Velocidade m\u00e1xima em km/h"
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "passeio",
+        "colecionador",
+        "esportivo"
+      ],
+      "description": "Categoria principal"
+    },
+    "body_type": {
+      "type": "string",
+      "enum": [
+        "sedan",
+        "hatch",
+        "suv",
+        "pickup",
+        "coupe",
+        "conversivel",
+        "wagon",
+        "van"
+      ],
+      "description": "Tipo de carroceria"
+    },
+    "drivetrain": {
+      "type": "string",
+      "enum": [
+        "fwd",
+        "rwd",
+        "awd",
+        "4wd"
+      ],
+      "description": "Tra\u00e7\u00e3o"
+    },
+    "platform": {
+      "type": "string",
+      "description": "Plataforma do ve\u00edculo"
+    },
+    "special_features": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Itens especiais (fibra de carbono, freios cer\u00e2micos, etc)"
+    },
+    "features": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Opcionais e equipamentos"
+    },
+    "images": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "URLs das imagens"
+    },
+    "location_city": {
+      "type": "string",
+      "description": "Cidade"
+    },
+    "location_state": {
+      "type": "string",
+      "description": "Estado (UF)"
+    },
+    "seller_type": {
+      "type": "string",
+      "enum": [
+        "particular",
+        "loja",
+        "concessionaria"
+      ],
+      "description": "Tipo de vendedor"
+    },
+    "is_featured": {
+      "type": "boolean",
+      "description": "An\u00fancio em destaque"
+    },
+    "condition": {
+      "type": "string",
+      "enum": [
+        "novo",
+        "seminovo",
+        "usado"
+      ],
+      "description": "Condi\u00e7\u00e3o do ve\u00edculo"
+    }
+  },
+  "required": [
+    "title",
+    "brand",
+    "model",
+    "year_model",
+    "price",
+    "category"
+  ]
+}
