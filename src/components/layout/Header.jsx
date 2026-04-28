@@ -78,6 +78,10 @@ export default function Header({ selectedCategory = 'all', onCategoryChange }) {
                   <LayoutList className="w-5 h-5" />
                   <span className="text-[10px] font-medium">Meus anúncios</span>
                 </Link>
+                <Link to="/Perfil" className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl hover:bg-zinc-100 transition-colors text-zinc-600 hover:text-zinc-900">
+                  <User className="w-5 h-5" />
+                  <span className="text-[10px] font-medium">Perfil</span>
+                </Link>
                 <button
                   onClick={handleLogout}
                   className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl hover:bg-zinc-100 transition-colors text-zinc-600 hover:text-zinc-900"

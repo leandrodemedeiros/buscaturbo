@@ -10,6 +10,7 @@ import Planos from './pages/Planos';
 import DestacarAnuncio from './pages/DestacarAnuncio';
 import CriarAnuncio from './pages/CriarAnuncio';
 import MeusAnuncios from './pages/MeusAnuncios';
+import Perfil from './pages/Perfil';
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
@@ -65,6 +66,7 @@ const AuthenticatedApp = () => {
       <Route path="/DestacarAnuncio" element={<LayoutWrapper currentPageName="DestacarAnuncio"><DestacarAnuncio /></LayoutWrapper>} />
       <Route path="/CriarAnuncio" element={<LayoutWrapper currentPageName="CriarAnuncio"><CriarAnuncio /></LayoutWrapper>} />
       <Route path="/MeusAnuncios" element={<LayoutWrapper currentPageName="MeusAnuncios"><MeusAnuncios /></LayoutWrapper>} />
+      <Route path="/Perfil" element={<LayoutWrapper currentPageName="Perfil"><Perfil /></LayoutWrapper>} />
       <Route path="*" element={<PageNotFound />} />
     </Routes>
   );
