@@ -1,13 +1,15 @@
 import { db } from '@/lib/db';
 import { supabase } from '@/lib/supabase';
 import React, { useState } from 'react';
-import { X, LogIn, UserPlus, Mail, Lock, Phone, User, ArrowLeft, Loader2, Eye, EyeOff } from 'lucide-react';
+import { X, LogIn, UserPlus, Mail, Lock, Phone, User, ArrowLeft, Loader2, Eye, EyeOff, Smartphone, Shield } from 'lucide-react';
 
 const inputClass = "w-full border border-zinc-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-red-400 focus:ring-1 focus:ring-red-100 bg-white";
 const labelClass = "block text-xs font-medium text-zinc-600 mb-1";
 
 export default function LoginModal({ open, onClose, onSuccess }) {
-  const [tab, setTab] = useState('login'); // 'login' | 'register' | 'forgot'
+  const [tab, setTab] = useState('login'); // 'login' | 'register' | 'forgot' | 'mfa'
+  const [mfaFactorId, setMfaFactorId] = useState('');
+  const [mfaCode, setMfaCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -35,12 +37,48 @@ export default function LoginModal({ open, onClose, onSuccess }) {
         password: loginForm.password,
       });
       if (error) throw error;
+
+      // Verificar se o usuário tem 2FA ativo
+      const { data: aalData } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+      if (aalData?.nextLevel === 'aal2' && aalData?.nextLevel !== aalData?.currentLevel) {
+        // Buscar o factor_id do TOTP ativo
+        const { data: factorsData } = await supabase.auth.mfa.listFactors();
+        const totpFactor = factorsData?.totp?.find(f => f.status === 'verified');
+        if (totpFactor) {
+          setMfaFactorId(totpFactor.id);
+          setTab('mfa');
+          setLoading(false);
+          return;
+        }
+      }
+
       onSuccess?.();
       onClose();
     } catch (err) {
       setError(err.message === 'Invalid login credentials'
         ? 'E-mail ou senha incorretos.'
         : err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleMfaVerify = async (e) => {
+    e.preventDefault();
+    setError(''); setLoading(true);
+    try {
+      const { data: challengeData, error: challengeError } = await supabase.auth.mfa.challenge({ factorId: mfaFactorId });
+      if (challengeError) throw challengeError;
+      const { error: verifyError } = await supabase.auth.mfa.verify({
+        factorId: mfaFactorId,
+        challengeId: challengeData.id,
+        code: mfaCode,
+      });
+      if (verifyError) throw verifyError;
+      onSuccess?.();
+      onClose();
+    } catch (err) {
+      setError('Código inválido. Tente novamente.');
     } finally {
       setLoading(false);
     }
@@ -105,7 +143,7 @@ export default function LoginModal({ open, onClose, onSuccess }) {
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100">
           <div className="flex items-center gap-2">
-            {(tab === 'register' || tab === 'forgot') && (
+            {(tab === 'register' || tab === 'forgot' || tab === 'mfa') && (
               <button onClick={() => changeTab('login')} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-zinc-100">
                 <ArrowLeft className="w-4 h-4 text-zinc-500" />
               </button>
@@ -115,11 +153,13 @@ export default function LoginModal({ open, onClose, onSuccess }) {
                 {tab === 'login' && 'Entrar'}
                 {tab === 'register' && 'Criar conta'}
                 {tab === 'forgot' && 'Recuperar senha'}
+                {tab === 'mfa' && 'Verificação em dois fatores'}
               </h2>
               <p className="text-xs text-zinc-500 mt-0.5">
                 {tab === 'login' && 'Acesse sua conta BuscaTurbo'}
                 {tab === 'register' && 'Preencha seus dados para começar'}
                 {tab === 'forgot' && 'Enviaremos um link para seu e-mail'}
+                {tab === 'mfa' && 'Digite o código do seu app autenticador'}
               </p>
             </div>
           </div>
@@ -298,6 +338,32 @@ export default function LoginModal({ open, onClose, onSuccess }) {
                 className="w-full bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white rounded-xl h-11 flex items-center justify-center gap-2 font-semibold text-sm transition-colors">
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
                 Enviar link de recuperação
+              </button>
+            </form>
+          )}
+
+          {/* ── ABA: MFA ── */}
+          {tab === 'mfa' && (
+            <form onSubmit={handleMfaVerify} className="space-y-4">
+              <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 flex items-start gap-3">
+                <Smartphone className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                <p className="text-sm text-blue-800">Abra seu app autenticador (Google Authenticator, Authy etc.) e insira o código de 6 dígitos.</p>
+              </div>
+              <div>
+                <label className={labelClass}>Código de verificação</label>
+                <input
+                  type="text" inputMode="numeric" maxLength={6} pattern="[0-9]{6}" required
+                  autoFocus
+                  className={inputClass + " text-center text-2xl tracking-[0.5em] font-mono"}
+                  placeholder="000000"
+                  value={mfaCode}
+                  onChange={e => setMfaCode(e.target.value.replace(/\D/g, ''))}
+                />
+              </div>
+              <button type="submit" disabled={loading || mfaCode.length < 6}
+                className="w-full bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white rounded-xl h-11 flex items-center justify-center gap-2 font-semibold text-sm transition-colors">
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Shield className="w-4 h-4" />}
+                Verificar e entrar
               </button>
             </form>
           )}
