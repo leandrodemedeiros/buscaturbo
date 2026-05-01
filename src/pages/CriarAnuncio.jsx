@@ -1,7 +1,7 @@
 import { db } from '@/lib/db';
 
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, ArrowRight, Upload, X, Eye, Send, CheckSquare, Square, Car, Star, Building2, Crown, Check, LogIn, Phone } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Upload, X, Eye, Send, CheckSquare, Square, Car, Star, Building2, Crown, Check, LogIn, Phone, Zap, Loader2 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Link, useNavigate } from 'react-router-dom';
 
@@ -130,7 +130,7 @@ function CheckboxField({ checked, onChange, label }) {
   );
 }
 
-const STEPS = ['Dados do veículo', 'Fotos & Descrição', 'Escolher plano'];
+const STEPS = ['Dados do veículo', 'Fotos & Descrição', 'Destacar anúncio'];
 
 export default function CriarAnuncio() {
   const navigate = useNavigate();
@@ -212,30 +212,41 @@ export default function CriarAnuncio() {
     }
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (highlightPlan = null) => {
     setSubmitting(true);
-    const code = 'BT-' + Math.random().toString(36).substring(2, 9).toUpperCase();
-    await db.entities.Vehicle.create({
-      title: form.title,
-      brand: form.brand,
-      model: form.model,
-      year_fabrication: parseInt(form.yearFab) || undefined,
-      year_model: parseInt(form.yearModel) || undefined,
-      price: parseFloat(form.price.replace(/\D/g, '')) || 0,
-      images: form.images,
-      category: 'passeio',
-    });
-    setSubmitting(false);
-    const params = new URLSearchParams({
-      codigo: code,
-      titulo: form.title,
-      marca: form.brand,
-      modelo: form.model,
-      preco: form.price,
-      imagem: form.images[0] || '',
-      email: user?.email || '',
-    });
-    navigate('/AnuncioPublicado?' + params.toString());
+    try {
+      const code = 'BT-' + Math.random().toString(36).substring(2, 9).toUpperCase();
+      const vehicle = await db.entities.Vehicle.create({
+        title: form.title,
+        brand: form.brand,
+        model: form.model,
+        year_fabrication: parseInt(form.yearFab) || undefined,
+        year_model: parseInt(form.yearModel) || undefined,
+        price: parseFloat(form.price.replace(/\D/g, '')) || 0,
+        images: form.images,
+        category: 'passeio',
+      });
+
+      // Se escolheu destacar, redireciona para pagamento
+      if (highlightPlan && vehicle?.id) {
+        navigate(`/DestacarAnuncio?vehicle_id=${vehicle.id}&plan=${highlightPlan}`);
+        return;
+      }
+
+      // Sem destaque — vai para página de confirmação
+      const params = new URLSearchParams({
+        codigo: code,
+        titulo: form.title,
+        marca: form.brand,
+        modelo: form.model,
+        preco: form.price,
+        imagem: form.images[0] || '',
+        email: user?.email || '',
+      });
+      navigate('/AnuncioPublicado?' + params.toString());
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const canGoNext0 = form.title && form.brand && form.price && form.cpf && form.sellerName;
@@ -470,99 +481,107 @@ export default function CriarAnuncio() {
           </div>
         )}
 
-        {/* STEP 2 — Escolher plano */}
+        {/* STEP 2 — Destacar anúncio */}
         {step === 2 && (
           <div className="space-y-6">
-            <h1 className="text-2xl font-black text-zinc-900">Escolha seu plano</h1>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {PLANS.map(p => {
-                const Icon = p.icon;
-                const isSelected = plan === p.id;
-                return (
-                  <div
-                    key={p.id}
-                    onClick={() => handlePlanSelect(p)}
-                    className={cn(
-                      "relative bg-white rounded-2xl border-2 p-5 cursor-pointer transition-all duration-200 flex flex-col gap-4",
-                      isSelected ? p.selectedColor : p.color + " hover:shadow-md"
-                    )}
-                  >
-                    {p.badge && (
-                      <span className="absolute top-3 right-3 text-[10px] font-bold bg-amber-500 text-white px-2 py-0.5 rounded-full">
-                        {p.badge}
-                      </span>
-                    )}
-                    {isSelected && (
-                      <div className="absolute top-3 left-3 w-5 h-5 bg-red-600 rounded-full flex items-center justify-center">
-                        <Check className="w-3 h-3 text-white" />
-                      </div>
-                    )}
-
-                    <div className="flex items-center gap-3 mt-1">
-                      <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0", p.iconBg)}>
-                        <Icon className={cn("w-5 h-5", p.iconColor)} />
-                      </div>
-                      <div>
-                        <div className="font-bold text-zinc-900 text-sm">{p.name}</div>
-                        <div className="text-xs text-zinc-500">{p.tagline}</div>
-                      </div>
-                    </div>
-
-                    <div className="text-xl font-black text-zinc-900">{p.priceLabel}</div>
-
-                    <ul className="space-y-1.5">
-                      {p.features.map((f, i) => (
-                        <li key={i} className="flex items-start gap-2 text-xs text-zinc-600">
-                          <Check className="w-3.5 h-3.5 text-green-500 flex-shrink-0 mt-0.5" />
-                          {f}
-                        </li>
-                      ))}
-                    </ul>
-
-                    <button
-                      onClick={e => { e.stopPropagation(); handlePlanSelect(p); }}
-                      className={cn(
-                        "w-full py-2 rounded-xl text-sm font-semibold transition-colors mt-auto",
-                        isSelected ? p.ctaClass : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200"
-                      )}
-                    >
-                      {p.isPro && !user ? (
-                        <span className="flex items-center justify-center gap-1.5"><LogIn className="w-3.5 h-3.5" /> {p.ctaLabel}</span>
-                      ) : p.ctaLabel}
-                    </button>
-                  </div>
-                );
-              })}
+            <div className="text-center space-y-2">
+              <div className="inline-flex items-center gap-2 bg-red-50 text-red-600 text-sm font-semibold px-4 py-1.5 rounded-full">
+                <Zap className="w-4 h-4" /> Último passo
+              </div>
+              <h1 className="text-2xl font-black text-zinc-900">Quer destacar seu anúncio?</h1>
+              <p className="text-zinc-500 text-sm max-w-md mx-auto">
+                Anúncios em destaque aparecem no topo das buscas e na página inicial, vendendo até 3x mais rápido.
+              </p>
             </div>
 
-            {selectedPlan?.isPro && user && (
-              <div className="bg-white rounded-2xl border border-zinc-100 p-6">
-                <Field label="Número do chassi (obrigatório para planos profissionais)" required>
-                  <input
-                    className={inputClass}
-                    placeholder="Ex: 9BWZZZ377VT004251"
-                    maxLength={17}
-                    value={form.chassis}
-                    onChange={e => set('chassis', e.target.value.toUpperCase())}
-                  />
-                  <p className="text-xs text-zinc-400 mt-1">Não será exibido no anúncio.</p>
-                </Field>
-              </div>
-            )}
+            <div className="grid grid-cols-1 gap-3 max-w-lg mx-auto">
 
-            <div className="flex items-center justify-between">
+              {/* Opção: Não destacar */}
+              <div
+                onClick={() => handleSubmit(null)}
+                className="bg-white border-2 border-zinc-200 hover:border-zinc-400 rounded-2xl p-5 cursor-pointer transition-all flex items-center gap-4 group"
+              >
+                <div className="w-10 h-10 bg-zinc-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                  <Send className="w-5 h-5 text-zinc-500" />
+                </div>
+                <div className="flex-1">
+                  <div className="font-bold text-zinc-900">Publicar sem destaque</div>
+                  <div className="text-xs text-zinc-500 mt-0.5">Grátis — apareço nos resultados normais</div>
+                </div>
+                <ArrowRight className="w-4 h-4 text-zinc-400 group-hover:text-zinc-600" />
+              </div>
+
+              {/* Opção: Destaque na Busca */}
+              <div
+                onClick={() => handleSubmit('busca')}
+                className="bg-white border-2 border-blue-200 hover:border-blue-400 rounded-2xl p-5 cursor-pointer transition-all flex items-center gap-4 group"
+              >
+                <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                  <Star className="w-5 h-5 text-blue-600" />
+                </div>
+                <div className="flex-1">
+                  <div className="font-bold text-zinc-900">Destaque na Busca</div>
+                  <div className="text-xs text-zinc-500 mt-0.5">7 dias de destaque nos resultados de busca</div>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <div className="font-black text-zinc-900 text-sm">R$ 29,90</div>
+                  <div className="text-xs text-zinc-400">7 dias</div>
+                </div>
+              </div>
+
+              {/* Opção: Destaque Home + Busca — Mais vendido */}
+              <div
+                onClick={() => handleSubmit('home_busca_7')}
+                className="bg-white border-2 border-amber-300 hover:border-amber-500 rounded-2xl p-5 cursor-pointer transition-all flex items-center gap-4 group relative overflow-hidden"
+              >
+                <div className="absolute top-0 right-0 bg-amber-500 text-white text-[10px] font-bold px-3 py-1 rounded-bl-xl">
+                  Mais vendido
+                </div>
+                <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                  <Zap className="w-5 h-5 text-amber-600" />
+                </div>
+                <div className="flex-1">
+                  <div className="font-bold text-zinc-900">Destaque Home + Busca</div>
+                  <div className="text-xs text-zinc-500 mt-0.5">7 dias na página inicial e nos resultados</div>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <div className="font-black text-zinc-900 text-sm">R$ 49,90</div>
+                  <div className="text-xs text-zinc-400">7 dias</div>
+                </div>
+              </div>
+
+              {/* Opção: Destaque Premium */}
+              <div
+                onClick={() => handleSubmit('home_busca_15')}
+                className="bg-white border-2 border-red-200 hover:border-red-400 rounded-2xl p-5 cursor-pointer transition-all flex items-center gap-4 group relative overflow-hidden"
+              >
+                <div className="absolute top-0 right-0 bg-red-600 text-white text-[10px] font-bold px-3 py-1 rounded-bl-xl">
+                  Maior alcance
+                </div>
+                <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                  <Crown className="w-5 h-5 text-red-600" />
+                </div>
+                <div className="flex-1">
+                  <div className="font-bold text-zinc-900">Destaque Premium</div>
+                  <div className="text-xs text-zinc-500 mt-0.5">15 dias com máxima visibilidade</div>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <div className="font-black text-zinc-900 text-sm">R$ 69,90</div>
+                  <div className="text-xs text-zinc-400">15 dias</div>
+                </div>
+              </div>
+
+            </div>
+
+            <div className="flex items-center justify-between max-w-lg mx-auto">
               <Button variant="outline" onClick={() => setStep(1)} className="rounded-xl gap-2">
                 <ArrowLeft className="w-4 h-4" /> Voltar
               </Button>
-              <Button
-                onClick={handleSubmit}
-                disabled={submitting || !canSubmit}
-                className="bg-red-600 hover:bg-red-700 text-white rounded-xl px-8 gap-2"
-              >
-                <Send className="w-4 h-4" />
-                {submitting ? 'Publicando...' : 'Publicar anúncio'}
-              </Button>
+              {submitting && (
+                <div className="flex items-center gap-2 text-sm text-zinc-500">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Publicando...
+                </div>
+              )}
             </div>
           </div>
         )}
