@@ -7,9 +7,13 @@ serve(async (req) => {
     if (!MP_ACCESS_TOKEN) throw new Error('MP_ACCESS_TOKEN não configurado')
 
     // Supabase com service_role para poder escrever sem RLS
+    // Suporta tanto a chave nova (SUPABASE_SECRET_KEYS) quanto a legada
+    const secretKeysRaw = Deno.env.get('SUPABASE_SECRET_KEYS') || '{}'
+    const secretKeys = JSON.parse(secretKeysRaw)
+    const serviceRoleKey = secretKeys.service_role || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+      serviceRoleKey,
     )
 
     const body = await req.json()
