@@ -4,9 +4,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Users, Car, Zap, Shield, LogOut,
-  CheckCircle, Clock, RefreshCw, Calendar,
-  Loader2, Search, Ban, EyeOff, Plus,
-  ArrowUpRight, Star, Trash2, X
+  CheckCircle, Clock, RefreshCw, Calendar, TrendingUp,
+  Loader2, Search, Ban, EyeOff, Plus, BarChart2,
+  ArrowUpRight, Star, Trash2, X, Eye
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -68,26 +68,30 @@ const Badge = ({ status }) => {
   return <span className={cn("text-xs font-semibold px-2.5 py-1 rounded-full", cls)}>{label}</span>;
 };
 
+
 // ── Dashboard ──────────────────────────────────────────────────────
 function Dashboard({ period }) {
   const [stats, setStats] = useState(null);
+  const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
     const since = getPeriodStart(period);
     try {
-      const [vehicles, payments, userStatus, accesses] = await Promise.all([
-        supabase.from('vehicles').select('status, is_featured, created_date'),
+      const [vehicles, payments, userStatus, logs] = await Promise.all([
+        supabase.from('vehicles').select('id, status, is_featured, created_date, brand, title, created_by'),
         supabase.from('highlight_payments').select('amount, status, created_at').gte('created_at', since),
-        supabase.from('user_status').select('status, user_type'),
-        supabase.from('access_logs').select('id', { count: 'exact', head: true }).gte('created_at', since),
+        supabase.from('user_status').select('status, user_type, email'),
+        supabase.from('access_logs').select('event_type, vehicle_id, search_term, brand, hour_of_day, day_of_week, created_at, user_email').gte('created_at', since),
       ]);
 
       const vData = vehicles.data || [];
       const pData = payments.data || [];
       const uData = userStatus.data || [];
+      const lData = logs.data || [];
 
+      // Stats básicos
       setStats({
         vehicles: {
           total: vData.length,
@@ -106,14 +110,74 @@ function Dashboard({ period }) {
         },
         users: {
           total: uData.length,
-          active: uData.filter(u => u.status === 'active').length,
           blocked: uData.filter(u => u.status === 'blocked').length,
-          owners: uData.filter(u => u.user_type === 'owner').length,
-          professionals: uData.filter(u => u.user_type === 'professional').length,
-          agencies: uData.filter(u => u.user_type === 'agency').length,
         },
-        accesses: accesses.count || 0,
+        accesses: lData.filter(l => l.event_type === 'page_view').length,
       });
+
+      // Métricas analíticas
+      const vehicleViews = lData.filter(l => l.event_type === 'vehicle_view');
+      const searches = lData.filter(l => l.event_type === 'search');
+      const contacts = lData.filter(l => l.event_type === 'contact_click');
+
+      // Horários de acesso (0-23)
+      const hourMap = {};
+      lData.forEach(l => {
+        if (l.hour_of_day != null) hourMap[l.hour_of_day] = (hourMap[l.hour_of_day] || 0) + 1;
+      });
+      const hourData = Array.from({ length: 24 }, (_, h) => ({ hour: h, count: hourMap[h] || 0 }));
+
+      // Dia com maior acesso
+      const dayMap = {};
+      lData.forEach(l => {
+        if (l.created_at) {
+          const d = l.created_at.split('T')[0];
+          dayMap[d] = (dayMap[d] || 0) + 1;
+        }
+      });
+      const peakDay = Object.entries(dayMap).sort((a, b) => b[1] - a[1])[0];
+
+      // Marcas mais buscadas
+      const brandSearchMap = {};
+      searches.forEach(l => {
+        const b = l.brand || (l.search_term ? l.search_term.split(' ')[0] : null);
+        if (b) brandSearchMap[b] = (brandSearchMap[b] || 0) + 1;
+      });
+      const topBrands = Object.entries(brandSearchMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+      // Anúncios mais visitados
+      const viewMap = {};
+      vehicleViews.forEach(l => {
+        if (l.vehicle_id) viewMap[l.vehicle_id] = (viewMap[l.vehicle_id] || 0) + 1;
+      });
+      const topVehicleIds = Object.entries(viewMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
+      const topVehicles = topVehicleIds.map(([id, count]) => {
+        const v = vData.find(v => v.id === id);
+        return { id, title: v?.title || 'Anúncio removido', brand: v?.brand || '—', count };
+      });
+
+      // Maiores anunciantes
+      const anunciantesMap = {};
+      vData.forEach(v => {
+        if (v.created_by) {
+          if (!anunciantesMap[v.created_by]) anunciantesMap[v.created_by] = { total: 0, type: 'owner' };
+          anunciantesMap[v.created_by].total++;
+        }
+      });
+      uData.forEach(u => {
+        if (anunciantesMap[u.email]) anunciantesMap[u.email].type = u.user_type;
+      });
+      const topAnunciantes = Object.entries(anunciantesMap)
+        .sort((a, b) => b[1].total - a[1].total).slice(0, 5)
+        .map(([email, data]) => ({ email, ...data }));
+
+      // Dias da semana com mais acesso
+      const weekDayNames = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+      const weekMap = {};
+      lData.forEach(l => { if (l.day_of_week != null) weekMap[l.day_of_week] = (weekMap[l.day_of_week] || 0) + 1; });
+      const weekData = Array.from({ length: 7 }, (_, d) => ({ day: weekDayNames[d], count: weekMap[d] || 0 }));
+
+      setMetrics({ hourData, peakDay, topBrands, topVehicles, topAnunciantes, weekData, totalContacts: contacts.length, totalViews: vehicleViews.length, totalSearches: searches.length });
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }, [period]);
@@ -121,40 +185,140 @@ function Dashboard({ period }) {
   useEffect(() => { load(); }, [load]);
 
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-zinc-400" /></div>;
-  if (!stats) return null;
+  if (!stats || !metrics) return null;
+
+  const maxHour = Math.max(...metrics.hourData.map(h => h.count), 1);
+  const maxWeek = Math.max(...metrics.weekData.map(d => d.count), 1);
+  const typeLabels = { owner: 'Proprietário', professional: 'Profissional', agency: 'Agência' };
 
   return (
     <div className="space-y-6">
+      {/* Cards do topo */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard icon={Car} label="Anúncios ativos" value={fmt(stats.vehicles.active)} sub={`${fmt(stats.vehicles.new)} novos no período`} color="green" />
         <StatCard icon={Users} label="Usuários gerenciados" value={fmt(stats.users.total)} sub={`${fmt(stats.users.blocked)} bloqueados`} color="blue" />
         <StatCard icon={Zap} label="Receita no período" value={fmtMoney(stats.payments.revenue)} sub={`${fmt(stats.payments.approved)} destaques pagos`} color="amber" />
-        <StatCard icon={LayoutDashboard} label="Acessos no período" value={fmt(stats.accesses)} color="zinc" />
+        <StatCard icon={BarChart2} label="Acessos no período" value={fmt(stats.accesses)} sub={`${fmt(metrics.totalViews)} views · ${fmt(metrics.totalContacts)} contatos`} color="zinc" />
       </div>
 
+      {/* Linha 2: Horários + Dias da semana */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card className="p-5">
-          <h3 className="font-bold text-zinc-900 mb-4 flex items-center gap-2"><Car className="w-4 h-4 text-red-600" /> Anúncios por status</h3>
-          <div className="space-y-3">
-            {[
-              { label: 'Ativos', value: stats.vehicles.active, color: 'bg-green-500' },
-              { label: 'Inativos', value: stats.vehicles.inactive, color: 'bg-zinc-300' },
-              { label: 'Bloqueados', value: stats.vehicles.blocked, color: 'bg-red-500' },
-              { label: 'Vendidos', value: stats.vehicles.sold, color: 'bg-blue-500' },
-            ].map(({ label, value, color }) => (
-              <div key={label}>
-                <div className="flex justify-between text-xs text-zinc-600 mb-1">
-                  <span>{label}</span><span className="font-semibold">{fmt(value)}</span>
+          <h3 className="font-bold text-zinc-900 mb-1 flex items-center gap-2 text-sm"><Clock className="w-4 h-4 text-blue-600" /> Acessos por hora do dia</h3>
+          <p className="text-xs text-zinc-400 mb-4">Horários com maior movimento no período</p>
+          <div className="flex items-end gap-0.5 h-20">
+            {metrics.hourData.map(({ hour, count }) => (
+              <div key={hour} className="flex-1 flex flex-col items-center gap-0.5 group">
+                <div
+                  className="w-full bg-blue-500 rounded-sm transition-all group-hover:bg-blue-600 relative"
+                  style={{ height: `${(count / maxHour) * 72}px`, minHeight: count > 0 ? '3px' : '0' }}
+                  title={`${hour}h: ${count} acessos`}
+                />
+              </div>
+            ))}
+          </div>
+          <div className="flex justify-between text-[9px] text-zinc-400 mt-1">
+            <span>0h</span><span>6h</span><span>12h</span><span>18h</span><span>23h</span>
+          </div>
+          {metrics.peakDay && (
+            <div className="mt-3 pt-3 border-t border-zinc-100 flex items-center justify-between">
+              <span className="text-xs text-zinc-500">📅 Dia com mais acessos</span>
+              <span className="text-xs font-bold text-zinc-900">{new Date(metrics.peakDay[0] + 'T12:00:00').toLocaleDateString('pt-BR')} · {fmt(metrics.peakDay[1])} acessos</span>
+            </div>
+          )}
+        </Card>
+
+        <Card className="p-5">
+          <h3 className="font-bold text-zinc-900 mb-1 flex items-center gap-2 text-sm"><TrendingUp className="w-4 h-4 text-green-600" /> Acessos por dia da semana</h3>
+          <p className="text-xs text-zinc-400 mb-4">Dias com maior volume de visitas</p>
+          <div className="space-y-2">
+            {metrics.weekData.map(({ day, count }) => (
+              <div key={day} className="flex items-center gap-3">
+                <span className="text-xs text-zinc-500 w-7 flex-shrink-0">{day}</span>
+                <div className="flex-1 h-2.5 bg-zinc-100 rounded-full overflow-hidden">
+                  <div className="h-full bg-green-500 rounded-full transition-all" style={{ width: `${(count / maxWeek) * 100}%` }} />
                 </div>
-                <div className="h-2 bg-zinc-100 rounded-full overflow-hidden">
-                  <div className={cn("h-full rounded-full", color)} style={{ width: stats.vehicles.total ? `${(value / stats.vehicles.total) * 100}%` : '0%' }} />
-                </div>
+                <span className="text-xs font-semibold text-zinc-700 w-8 text-right">{fmt(count)}</span>
               </div>
             ))}
           </div>
         </Card>
+      </div>
+
+      {/* Linha 3: Marcas buscadas + Anúncios mais visitados */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card className="p-5">
-          <h3 className="font-bold text-zinc-900 mb-4 flex items-center gap-2"><Zap className="w-4 h-4 text-amber-500" /> Destaques no período</h3>
+          <h3 className="font-bold text-zinc-900 mb-1 flex items-center gap-2 text-sm"><Search className="w-4 h-4 text-purple-600" /> Marcas mais buscadas</h3>
+          <p className="text-xs text-zinc-400 mb-4">{fmt(metrics.totalSearches)} buscas no período</p>
+          {metrics.topBrands.length === 0 ? (
+            <p className="text-sm text-zinc-400 text-center py-4">Nenhuma busca registrada ainda</p>
+          ) : (
+            <div className="space-y-3">
+              {metrics.topBrands.map(([brand, count], i) => (
+                <div key={brand} className="flex items-center gap-3">
+                  <span className="text-xs font-bold text-zinc-400 w-4">{i + 1}</span>
+                  <div className="flex-1">
+                    <div className="flex justify-between mb-1">
+                      <span className="text-sm font-medium text-zinc-800">{brand}</span>
+                      <span className="text-xs text-zinc-500">{count} buscas</span>
+                    </div>
+                    <div className="h-1.5 bg-zinc-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-purple-500 rounded-full" style={{ width: `${(count / metrics.topBrands[0][1]) * 100}%` }} />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        <Card className="p-5">
+          <h3 className="font-bold text-zinc-900 mb-1 flex items-center gap-2 text-sm"><Eye className="w-4 h-4 text-amber-600" /> Anúncios mais visitados</h3>
+          <p className="text-xs text-zinc-400 mb-4">{fmt(metrics.totalViews)} visualizações no período</p>
+          {metrics.topVehicles.length === 0 ? (
+            <p className="text-sm text-zinc-400 text-center py-4">Nenhuma visualização registrada ainda</p>
+          ) : (
+            <div className="space-y-3">
+              {metrics.topVehicles.map((v, i) => (
+                <div key={v.id} className="flex items-center gap-3">
+                  <span className="text-xs font-bold text-zinc-400 w-4">{i + 1}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-zinc-800 truncate">{v.title}</p>
+                    <p className="text-xs text-zinc-400">{v.brand}</p>
+                  </div>
+                  <span className="text-xs font-bold text-amber-600 flex-shrink-0">{v.count} views</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      </div>
+
+      {/* Linha 4: Maiores anunciantes + Destaques */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card className="p-5">
+          <h3 className="font-bold text-zinc-900 mb-1 flex items-center gap-2 text-sm"><Users className="w-4 h-4 text-blue-600" /> Maiores anunciantes</h3>
+          <p className="text-xs text-zinc-400 mb-4">Por quantidade total de anúncios</p>
+          {metrics.topAnunciantes.length === 0 ? (
+            <p className="text-sm text-zinc-400 text-center py-4">Nenhum anunciante encontrado</p>
+          ) : (
+            <div className="space-y-3">
+              {metrics.topAnunciantes.map((a, i) => (
+                <div key={a.email} className="flex items-center gap-3">
+                  <span className="text-xs font-bold text-zinc-400 w-4">{i + 1}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-zinc-800 truncate">{a.email}</p>
+                    <span className="text-[10px] bg-zinc-100 text-zinc-500 px-1.5 py-0.5 rounded-full">{typeLabels[a.type] || a.type}</span>
+                  </div>
+                  <span className="text-xs font-bold text-blue-600 flex-shrink-0">{a.total} anúncios</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        <Card className="p-5">
+          <h3 className="font-bold text-zinc-900 mb-4 flex items-center gap-2 text-sm"><Zap className="w-4 h-4 text-amber-500" /> Destaques no período</h3>
           <div className="space-y-2">
             {[
               { label: 'Destaques ativos', value: fmt(stats.vehicles.featured), cls: 'text-zinc-900' },
@@ -173,6 +337,7 @@ function Dashboard({ period }) {
     </div>
   );
 }
+
 
 // ── Usuários ───────────────────────────────────────────────────────
 function UsersPanel() {

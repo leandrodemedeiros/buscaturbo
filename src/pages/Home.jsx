@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { AnimatePresence } from 'framer-motion';
 
 import Header from '@/components/layout/Header';
@@ -9,6 +9,7 @@ import CompareBar from '@/components/vehicles/CompareBar';
 
 import useVehicleSearch from '@/components/hooks/useVehicleSearch';
 import useCompare from '@/components/hooks/useCompare';
+import { analytics } from '@/lib/analytics';
 
 export default function Home() {
   const [isCompareExpanded, setIsCompareExpanded] = useState(false);
@@ -45,8 +46,12 @@ export default function Home() {
   } = useCompare();
 
   const handleViewVehicle = (vehicle) => {
+    analytics.vehicleView(vehicle.id, vehicle.brand);
     console.log('View vehicle:', vehicle);
   };
+
+  // Registrar page view na montagem
+  useEffect(() => { analytics.pageView('home'); }, []);
 
   const handleClearCompare = () => {
     clearCompare();

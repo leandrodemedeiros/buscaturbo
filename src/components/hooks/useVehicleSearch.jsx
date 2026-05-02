@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 
 import { useQuery } from '@tanstack/react-query';
 import debounce from 'lodash/debounce';
+import { analytics } from '@/lib/analytics';
 
 export default function useVehicleSearch() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -34,6 +35,15 @@ export default function useVehicleSearch() {
   useEffect(() => {
     debouncedSetQuery(searchQuery);
   }, [searchQuery, debouncedSetQuery]);
+
+  // Registrar busca quando o query debounced mudar
+  useEffect(() => {
+    if (debouncedQuery.trim().length >= 2) {
+      analytics.search(debouncedQuery, filters.brands?.[0] || null);
+    } else if (filters.brands?.length > 0) {
+      analytics.search(null, filters.brands[0]);
+    }
+  }, [debouncedQuery, filters.brands]);
 
   // Fetch vehicles
   const { data: allVehicles = [], isLoading, error } = useQuery({
