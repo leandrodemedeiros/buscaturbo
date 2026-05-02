@@ -3,10 +3,11 @@ import { db } from '@/lib/db';
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { createPageUrl } from "@/utils";
-import { User, Heart, Star, LayoutList, LogOut } from 'lucide-react';
+import { User, Heart, Star, LayoutList, LogOut, Shield } from 'lucide-react';
 import { cn } from "@/lib/utils";
 import AlertsPopover from '@/components/layout/AlertsPopover.jsx';
 import LoginModal from '@/components/auth/LoginModal';
+import { useAdmin } from '@/lib/useAdmin';
 
 const CATEGORIES = [
   { id: 'all',          label: 'Todos',        active: 'bg-zinc-900 text-white',  inactive: 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100' },
@@ -17,6 +18,7 @@ const CATEGORIES = [
 
 export default function Header({ selectedCategory = 'all', onCategoryChange }) {
   const [user, setUser] = useState(null);
+  const { isAdmin } = useAdmin();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -82,6 +84,12 @@ export default function Header({ selectedCategory = 'all', onCategoryChange }) {
                   <User className="w-5 h-5" />
                   <span className="text-[10px] font-medium">Perfil</span>
                 </Link>
+                {isAdmin && (
+                  <Link to="/admin" className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl hover:bg-red-50 transition-colors text-red-600">
+                    <Shield className="w-5 h-5" />
+                    <span className="text-[10px] font-medium">Admin</span>
+                  </Link>
+                )}
                 <button
                   onClick={handleLogout}
                   className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl hover:bg-zinc-100 transition-colors text-zinc-600 hover:text-zinc-900"

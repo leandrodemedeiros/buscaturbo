@@ -1,0 +1,717 @@
+import { supabase } from '@/lib/supabase';
+import { useAdmin } from '@/lib/useAdmin';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  LayoutDashboard, Users, Car, Zap, Shield, LogOut,
+  TrendingUp, AlertTriangle, CheckCircle, XCircle, Clock,
+  BarChart2, ChevronDown, Loader2, Search, Ban, Eye,
+  EyeOff, RefreshCw, Calendar, Trash2, UserPlus, X,
+  ArrowUpRight, Star, Crown, Edit2, Check, Plus
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
+
+// ─── Helpers ────────────────────────────────────────────────────────
+const fmt = (n) => (n || 0).toLocaleString('pt-BR');
+const fmtMoney = (n) => (n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const fmtDate = (d) => d ? new Date(d).toLocaleDateString('pt-BR') : '—';
+
+const PERIOD_OPTIONS = [
+  { label: 'Mês atual', value: 'month' },
+  { label: 'Trimestre', value: 'quarter' },
+  { label: 'Semestre', value: 'semester' },
+];
+
+function getPeriodStart(period) {
+  const now = new Date();
+  if (period === 'month') return new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  if (period === 'quarter') return new Date(now.getFullYear(), now.getMonth() - 2, 1).toISOString();
+  return new Date(now.getFullYear(), now.getMonth() - 5, 1).toISOString();
+}
+
+// ─── Componentes base ───────────────────────────────────────────────
+const Card = ({ children, className }) => (
+  <div className={cn("bg-white rounded-2xl border border-zinc-200", className)}>{children}</div>
+);
+
+const StatCard = ({ icon: Icon, label, value, sub, color = 'zinc' }) => {
+  const colors = {
+    zinc: 'bg-zinc-100 text-zinc-600',
+    green: 'bg-green-100 text-green-600',
+    red: 'bg-red-100 text-red-600',
+    amber: 'bg-amber-100 text-amber-600',
+    blue: 'bg-blue-100 text-blue-600',
+  };
+  return (
+    <Card className="p-5">
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="text-xs text-zinc-500 font-medium">{label}</p>
+          <p className="text-2xl font-black text-zinc-900 mt-1">{value}</p>
+          {sub && <p className="text-xs text-zinc-400 mt-0.5">{sub}</p>}
+        </div>
+        <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center", colors[color])}>
+          <Icon className="w-4 h-4" />
+        </div>
+      </div>
+    </Card>
+  );
+};
+
+const Badge = ({ status }) => {
+  const map = {
+    active:    { label: 'Ativo',      cls: 'bg-green-100 text-green-700' },
+    inactive:  { label: 'Inativo',    cls: 'bg-zinc-100 text-zinc-600' },
+    blocked:   { label: 'Bloqueado',  cls: 'bg-red-100 text-red-700' },
+    sold:      { label: 'Vendido',    cls: 'bg-blue-100 text-blue-700' },
+    approved:  { label: 'Aprovado',   cls: 'bg-green-100 text-green-700' },
+    pending:   { label: 'Pendente',   cls: 'bg-amber-100 text-amber-700' },
+    expired:   { label: 'Expirado',   cls: 'bg-zinc-100 text-zinc-500' },
+    extended:  { label: 'Prorrogado', cls: 'bg-purple-100 text-purple-700' },
+  };
+  const { label, cls } = map[status] || { label: status, cls: 'bg-zinc-100 text-zinc-600' };
+  return <span className={cn("text-xs font-semibold px-2.5 py-1 rounded-full", cls)}>{label}</span>;
+};
+
+// ─── Seção: Dashboard ────────────────────────────────────────────────
+function Dashboard({ period }) {
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const since = getPeriodStart(period);
+    try {
+      const [vehicles, payments, users, accesses] = await Promise.all([
+        supabase.from('vehicles').select('status, is_featured, created_at'),
+        supabase.from('highlight_payments').select('amount, status, created_at').gte('created_at', since),
+        supabase.from('user_status').select('status, user_type'),
+        supabase.from('access_logs').select('id', { count: 'exact', head: true }).gte('created_at', since),
+      ]);
+
+      const vData = vehicles.data || [];
+      const pData = payments.data || [];
+      const uData = users.data || [];
+
+      setStats({
+        vehicles: {
+          total: vData.length,
+          active: vData.filter(v => v.status === 'active').length,
+          inactive: vData.filter(v => v.status === 'inactive').length,
+          blocked: vData.filter(v => v.status === 'blocked').length,
+          sold: vData.filter(v => v.status === 'sold').length,
+          featured: vData.filter(v => v.is_featured).length,
+          new: vData.filter(v => v.created_at >= since).length,
+        },
+        payments: {
+          total: pData.length,
+          revenue: pData.filter(p => p.status === 'approved').reduce((s, p) => s + (p.amount || 0), 0),
+          approved: pData.filter(p => p.status === 'approved').length,
+          pending: pData.filter(p => p.status === 'pending').length,
+        },
+        users: {
+          total: uData.length,
+          active: uData.filter(u => u.status === 'active').length,
+          blocked: uData.filter(u => u.status === 'blocked').length,
+          owners: uData.filter(u => u.user_type === 'owner').length,
+          professionals: uData.filter(u => u.user_type === 'professional').length,
+          agencies: uData.filter(u => u.user_type === 'agency').length,
+        },
+        accesses: accesses.count || 0,
+      });
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  }, [period]);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) return <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-zinc-400" /></div>;
+  if (!stats) return null;
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard icon={Car} label="Anúncios ativos" value={fmt(stats.vehicles.active)} sub={`${fmt(stats.vehicles.new)} novos no período`} color="green" />
+        <StatCard icon={Users} label="Usuários cadastrados" value={fmt(stats.users.total)} sub={`${fmt(stats.users.blocked)} bloqueados`} color="blue" />
+        <StatCard icon={Zap} label="Receita no período" value={fmtMoney(stats.payments.revenue)} sub={`${fmt(stats.payments.approved)} destaques pagos`} color="amber" />
+        <StatCard icon={BarChart2} label="Acessos no período" value={fmt(stats.accesses)} color="zinc" />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Anúncios por status */}
+        <Card className="p-5">
+          <h3 className="font-bold text-zinc-900 mb-4 flex items-center gap-2"><Car className="w-4 h-4 text-red-600" /> Anúncios por status</h3>
+          <div className="space-y-3">
+            {[
+              { label: 'Ativos', value: stats.vehicles.active, total: stats.vehicles.total, color: 'bg-green-500' },
+              { label: 'Inativos', value: stats.vehicles.inactive, total: stats.vehicles.total, color: 'bg-zinc-300' },
+              { label: 'Bloqueados', value: stats.vehicles.blocked, total: stats.vehicles.total, color: 'bg-red-500' },
+              { label: 'Vendidos', value: stats.vehicles.sold, total: stats.vehicles.total, color: 'bg-blue-500' },
+            ].map(({ label, value, total, color }) => (
+              <div key={label}>
+                <div className="flex justify-between text-xs text-zinc-600 mb-1">
+                  <span>{label}</span>
+                  <span className="font-semibold">{fmt(value)}</span>
+                </div>
+                <div className="h-2 bg-zinc-100 rounded-full overflow-hidden">
+                  <div className={cn("h-full rounded-full transition-all", color)} style={{ width: total ? `${(value / total) * 100}%` : '0%' }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        {/* Destaques e receita */}
+        <Card className="p-5">
+          <h3 className="font-bold text-zinc-900 mb-4 flex items-center gap-2"><Zap className="w-4 h-4 text-amber-500" /> Destaques no período</h3>
+          <div className="space-y-3">
+            <div className="flex justify-between items-center py-2 border-b border-zinc-100">
+              <span className="text-sm text-zinc-600">Destaques ativos</span>
+              <span className="font-bold text-zinc-900">{fmt(stats.vehicles.featured)}</span>
+            </div>
+            <div className="flex justify-between items-center py-2 border-b border-zinc-100">
+              <span className="text-sm text-zinc-600">Pagamentos aprovados</span>
+              <span className="font-bold text-green-700">{fmt(stats.payments.approved)}</span>
+            </div>
+            <div className="flex justify-between items-center py-2 border-b border-zinc-100">
+              <span className="text-sm text-zinc-600">Pagamentos pendentes</span>
+              <span className="font-bold text-amber-700">{fmt(stats.payments.pending)}</span>
+            </div>
+            <div className="flex justify-between items-center py-2">
+              <span className="text-sm font-semibold text-zinc-800">Receita total</span>
+              <span className="font-black text-zinc-900">{fmtMoney(stats.payments.revenue)}</span>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      {/* Usuários por tipo */}
+      <Card className="p-5">
+        <h3 className="font-bold text-zinc-900 mb-4 flex items-center gap-2"><Users className="w-4 h-4 text-blue-600" /> Usuários por tipo</h3>
+        <div className="grid grid-cols-3 gap-4">
+          {[
+            { label: 'Proprietários', value: stats.users.owners },
+            { label: 'Profissionais', value: stats.users.professionals },
+            { label: 'Agências', value: stats.users.agencies },
+          ].map(({ label, value }) => (
+            <div key={label} className="text-center p-4 bg-zinc-50 rounded-xl">
+              <p className="text-2xl font-black text-zinc-900">{fmt(value)}</p>
+              <p className="text-xs text-zinc-500 mt-1">{label}</p>
+            </div>
+          ))}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ─── Seção: Usuários ─────────────────────────────────────────────────
+function UsersPanel() {
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [saving, setSaving] = useState(null);
+
+  const load = async () => {
+    setLoading(true);
+    const { data } = await supabase.from('user_status').select('*').order('updated_at', { ascending: false });
+    setUsers(data || []);
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const updateStatus = async (email, status) => {
+    setSaving(email);
+    const now = new Date().toISOString();
+    const { data: { user } } = await supabase.auth.getUser();
+    const updates = { status, updated_at: now };
+    if (status === 'blocked') { updates.blocked_at = now; updates.blocked_by = user?.email; }
+
+    await supabase.from('user_status').upsert({ email, ...updates }, { onConflict: 'email' });
+
+    // Se bloqueou, bloqueia todos os anúncios do usuário
+    if (status === 'blocked') {
+      await supabase.from('vehicles').update({ status: 'blocked', blocked_at: now, blocked_by: user?.email })
+        .eq('created_by', email).neq('status', 'sold');
+    }
+    // Se reativou, reativa os anúncios que estavam bloqueados por este motivo
+    if (status === 'active') {
+      await supabase.from('vehicles').update({ status: 'active', blocked_at: null, blocked_by: null })
+        .eq('created_by', email).eq('status', 'blocked').eq('blocked_by', user?.email);
+    }
+
+    await load();
+    setSaving(null);
+  };
+
+  const updateType = async (email, user_type) => {
+    await supabase.from('user_status').upsert({ email, user_type, updated_at: new Date().toISOString() }, { onConflict: 'email' });
+    setUsers(u => u.map(x => x.email === email ? { ...x, user_type } : x));
+  };
+
+  const filtered = users.filter(u =>
+    u.email?.toLowerCase().includes(search.toLowerCase()) ||
+    u.cpf?.includes(search)
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+          <input className="w-full pl-9 pr-4 py-2 text-sm border border-zinc-200 rounded-xl outline-none focus:border-red-400" placeholder="Buscar por e-mail ou CPF..." value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+        <button onClick={load} className="p-2 border border-zinc-200 rounded-xl hover:bg-zinc-50"><RefreshCw className="w-4 h-4 text-zinc-500" /></button>
+      </div>
+
+      {loading ? <div className="flex justify-center py-12"><Loader2 className="w-5 h-5 animate-spin text-zinc-400" /></div> : (
+        <Card>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-zinc-100">
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500">E-mail</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500">CPF</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500">Tipo</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500">Status</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.length === 0 && (
+                  <tr><td colSpan={5} className="text-center py-10 text-zinc-400 text-sm">Nenhum usuário encontrado</td></tr>
+                )}
+                {filtered.map(u => (
+                  <tr key={u.email} className="border-b border-zinc-50 hover:bg-zinc-50">
+                    <td className="px-4 py-3 text-zinc-800 font-medium">{u.email}</td>
+                    <td className="px-4 py-3 text-zinc-500">{u.cpf || '—'}</td>
+                    <td className="px-4 py-3">
+                      <select value={u.user_type || 'owner'} onChange={e => updateType(u.email, e.target.value)} className="text-xs border border-zinc-200 rounded-lg px-2 py-1 outline-none focus:border-red-400 bg-white">
+                        <option value="owner">Proprietário</option>
+                        <option value="professional">Profissional</option>
+                        <option value="agency">Agência</option>
+                      </select>
+                    </td>
+                    <td className="px-4 py-3"><Badge status={u.status || 'active'} /></td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1">
+                        {saving === u.email ? <Loader2 className="w-4 h-4 animate-spin text-zinc-400" /> : (
+                          <>
+                            {u.status !== 'active' && (
+                              <button onClick={() => updateStatus(u.email, 'active')} title="Ativar" className="p-1.5 hover:bg-green-50 rounded-lg text-green-600"><CheckCircle className="w-4 h-4" /></button>
+                            )}
+                            {u.status !== 'inactive' && (
+                              <button onClick={() => updateStatus(u.email, 'inactive')} title="Inativar" className="p-1.5 hover:bg-zinc-100 rounded-lg text-zinc-500"><EyeOff className="w-4 h-4" /></button>
+                            )}
+                            {u.status !== 'blocked' && (
+                              <button onClick={() => { if (confirm(`Bloquear ${u.email} e todos seus anúncios?`)) updateStatus(u.email, 'blocked'); }} title="Bloquear" className="p-1.5 hover:bg-red-50 rounded-lg text-red-600"><Ban className="w-4 h-4" /></button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ─── Seção: Anúncios ─────────────────────────────────────────────────
+function VehiclesPanel() {
+  const [vehicles, setVehicles] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [saving, setSaving] = useState(null);
+
+  const load = async () => {
+    setLoading(true);
+    const { data } = await supabase.from('vehicles').select('id, title, brand, model, price, status, is_featured, created_by, created_date, blocked_at').order('created_date', { ascending: false }).limit(200);
+    setVehicles(data || []);
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const updateVehicleStatus = async (id, status) => {
+    setSaving(id);
+    const { data: { user } } = await supabase.auth.getUser();
+    const updates = { status };
+    if (status === 'blocked') { updates.blocked_at = new Date().toISOString(); updates.blocked_by = user?.email; }
+    if (status === 'active') { updates.blocked_at = null; updates.blocked_by = null; }
+    await supabase.from('vehicles').update(updates).eq('id', id);
+    await load();
+    setSaving(null);
+  };
+
+  const filtered = vehicles.filter(v =>
+    v.title?.toLowerCase().includes(search.toLowerCase()) ||
+    v.brand?.toLowerCase().includes(search.toLowerCase()) ||
+    v.created_by?.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+          <input className="w-full pl-9 pr-4 py-2 text-sm border border-zinc-200 rounded-xl outline-none focus:border-red-400" placeholder="Buscar por título, marca ou usuário..." value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+        <button onClick={load} className="p-2 border border-zinc-200 rounded-xl hover:bg-zinc-50"><RefreshCw className="w-4 h-4 text-zinc-500" /></button>
+      </div>
+
+      {loading ? <div className="flex justify-center py-12"><Loader2 className="w-5 h-5 animate-spin text-zinc-400" /></div> : (
+        <Card>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-zinc-100">
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500">Anúncio</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500">Anunciante</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500">Preço</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500">Status</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500">Destaque</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.length === 0 && (
+                  <tr><td colSpan={6} className="text-center py-10 text-zinc-400 text-sm">Nenhum anúncio encontrado</td></tr>
+                )}
+                {filtered.map(v => (
+                  <tr key={v.id} className="border-b border-zinc-50 hover:bg-zinc-50">
+                    <td className="px-4 py-3">
+                      <p className="font-medium text-zinc-900 truncate max-w-[180px]">{v.title}</p>
+                      <p className="text-xs text-zinc-400">{v.brand} · {fmtDate(v.created_date)}</p>
+                    </td>
+                    <td className="px-4 py-3 text-zinc-500 text-xs truncate max-w-[140px]">{v.created_by}</td>
+                    <td className="px-4 py-3 font-semibold text-zinc-900">{fmtMoney(v.price)}</td>
+                    <td className="px-4 py-3"><Badge status={v.status || 'active'} /></td>
+                    <td className="px-4 py-3">
+                      {v.is_featured ? <span className="text-xs font-semibold text-amber-600 flex items-center gap-1"><Star className="w-3 h-3" /> Ativo</span> : <span className="text-xs text-zinc-400">—</span>}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1">
+                        {saving === v.id ? <Loader2 className="w-4 h-4 animate-spin text-zinc-400" /> : (
+                          <>
+                            {v.status !== 'active' && <button onClick={() => updateVehicleStatus(v.id, 'active')} title="Ativar" className="p-1.5 hover:bg-green-50 rounded-lg text-green-600"><CheckCircle className="w-4 h-4" /></button>}
+                            {v.status !== 'inactive' && v.status !== 'sold' && <button onClick={() => updateVehicleStatus(v.id, 'inactive')} title="Inativar" className="p-1.5 hover:bg-zinc-100 rounded-lg text-zinc-500"><EyeOff className="w-4 h-4" /></button>}
+                            {v.status !== 'blocked' && <button onClick={() => { if (confirm('Bloquear este anúncio?')) updateVehicleStatus(v.id, 'blocked'); }} title="Bloquear" className="p-1.5 hover:bg-red-50 rounded-lg text-red-600"><Ban className="w-4 h-4" /></button>}
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ─── Seção: Destaques ────────────────────────────────────────────────
+function HighlightsPanel() {
+  const [highlights, setHighlights] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(null);
+  const [extendModal, setExtendModal] = useState(null);
+  const [extendDate, setExtendDate] = useState('');
+
+  const load = async () => {
+    setLoading(true);
+    const { data } = await supabase
+      .from('highlight_payments')
+      .select('*, vehicles(title, brand, status, is_featured, featured_until)')
+      .order('created_at', { ascending: false })
+      .limit(200);
+    setHighlights(data || []);
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const getHighlightStatus = (h) => {
+    if (h.status !== 'approved') return h.status;
+    if (!h.vehicles?.is_featured) return 'inactive';
+    if (h.extended_until) return 'extended';
+    const exp = new Date(h.expires_at);
+    if (exp < new Date()) return 'expired';
+    return 'active';
+  };
+
+  const toggleFeatured = async (h, enable) => {
+    setSaving(h.id);
+    await supabase.from('vehicles').update({ is_featured: enable }).eq('id', h.vehicle_id);
+    await load();
+    setSaving(null);
+  };
+
+  const renewHighlight = async (h) => {
+    setSaving(h.id);
+    const newExpiry = new Date();
+    newExpiry.setDate(newExpiry.getDate() + 7);
+    await supabase.from('vehicles').update({ is_featured: true, featured_until: newExpiry.toISOString() }).eq('id', h.vehicle_id);
+    await supabase.from('highlight_payments').update({ expires_at: newExpiry.toISOString(), status: 'approved' }).eq('id', h.id);
+    await load();
+    setSaving(null);
+  };
+
+  const extendHighlight = async () => {
+    if (!extendDate || !extendModal) return;
+    setSaving(extendModal.id);
+    const newExpiry = new Date(extendDate + 'T23:59:59');
+    await supabase.from('vehicles').update({ is_featured: true, featured_until: newExpiry.toISOString() }).eq('id', extendModal.vehicle_id);
+    await supabase.from('highlight_payments').update({ expires_at: newExpiry.toISOString(), extended_until: newExpiry.toISOString(), status: 'approved' }).eq('id', extendModal.id);
+    setExtendModal(null);
+    setExtendDate('');
+    await load();
+    setSaving(null);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <button onClick={load} className="p-2 border border-zinc-200 rounded-xl hover:bg-zinc-50"><RefreshCw className="w-4 h-4 text-zinc-500" /></button>
+      </div>
+
+      {loading ? <div className="flex justify-center py-12"><Loader2 className="w-5 h-5 animate-spin text-zinc-400" /></div> : (
+        <Card>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-zinc-100">
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500">Anúncio</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500">Plano</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500">Valor</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500">Expira em</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500">Status</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {highlights.length === 0 && (
+                  <tr><td colSpan={6} className="text-center py-10 text-zinc-400 text-sm">Nenhum destaque encontrado</td></tr>
+                )}
+                {highlights.map(h => {
+                  const status = getHighlightStatus(h);
+                  const planLabels = { busca: 'Busca', home_busca_7: 'Home+Busca', home_busca_15: 'Premium' };
+                  return (
+                    <tr key={h.id} className="border-b border-zinc-50 hover:bg-zinc-50">
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-zinc-900 truncate max-w-[160px]">{h.vehicles?.title || '—'}</p>
+                        <p className="text-xs text-zinc-400">{h.user_id?.slice(0, 8)}...</p>
+                      </td>
+                      <td className="px-4 py-3 text-zinc-600 text-xs">{planLabels[h.plan_id] || h.plan_id}</td>
+                      <td className="px-4 py-3 font-semibold text-zinc-900">{fmtMoney(h.amount)}</td>
+                      <td className="px-4 py-3 text-zinc-500 text-xs">{fmtDate(h.expires_at)}</td>
+                      <td className="px-4 py-3"><Badge status={status} /></td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1">
+                          {saving === h.id ? <Loader2 className="w-4 h-4 animate-spin text-zinc-400" /> : (
+                            <>
+                              {status !== 'active' && <button onClick={() => toggleFeatured(h, true)} title="Ativar destaque" className="p-1.5 hover:bg-green-50 rounded-lg text-green-600"><CheckCircle className="w-4 h-4" /></button>}
+                              {status === 'active' && <button onClick={() => toggleFeatured(h, false)} title="Inativar destaque" className="p-1.5 hover:bg-zinc-100 rounded-lg text-zinc-500"><EyeOff className="w-4 h-4" /></button>}
+                              <button onClick={() => renewHighlight(h)} title="Renovar (+7 dias)" className="p-1.5 hover:bg-blue-50 rounded-lg text-blue-600"><RefreshCw className="w-4 h-4" /></button>
+                              <button onClick={() => { setExtendModal(h); setExtendDate(''); }} title="Prorrogar até data" className="p-1.5 hover:bg-purple-50 rounded-lg text-purple-600"><Calendar className="w-4 h-4" /></button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      {/* Modal de prorrogação */}
+      {extendModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setExtendModal(null)} />
+          <div className="relative bg-white rounded-2xl p-6 w-full max-w-sm space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-zinc-900">Prorrogar destaque</h3>
+              <button onClick={() => setExtendModal(null)}><X className="w-4 h-4 text-zinc-400" /></button>
+            </div>
+            <p className="text-sm text-zinc-500 truncate">{extendModal.vehicles?.title}</p>
+            <div>
+              <label className="block text-xs font-medium text-zinc-600 mb-1">Nova data de expiração</label>
+              <input type="date" className="w-full border border-zinc-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-red-400" value={extendDate} onChange={e => setExtendDate(e.target.value)} min={new Date().toISOString().split('T')[0]} />
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setExtendModal(null)} className="flex-1 border border-zinc-200 rounded-xl py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50">Cancelar</button>
+              <button onClick={extendHighlight} disabled={!extendDate} className="flex-1 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-xl py-2 text-sm font-semibold">Prorrogar</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Seção: Administradores ──────────────────────────────────────────
+function AdminsPanel({ isSuperAdmin }) {
+  const [admins, setAdmins] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [newEmail, setNewEmail] = useState('');
+  const [adding, setAdding] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    const { data } = await supabase.from('admins').select('*').order('created_at');
+    setAdmins(data || []);
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const addAdmin = async () => {
+    if (!newEmail) return;
+    setAdding(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    await supabase.from('admins').insert({ email: newEmail, is_super: false, created_by: user?.email });
+    setNewEmail('');
+    await load();
+    setAdding(false);
+  };
+
+  const removeAdmin = async (email) => {
+    if (!confirm(`Remover ${email} como administrador?`)) return;
+    await supabase.from('admins').delete().eq('email', email).eq('is_super', false);
+    await load();
+  };
+
+  return (
+    <div className="space-y-4 max-w-lg">
+      {isSuperAdmin && (
+        <Card className="p-4">
+          <h3 className="font-semibold text-zinc-900 mb-3 text-sm">Adicionar administrador</h3>
+          <div className="flex gap-2">
+            <input type="email" placeholder="E-mail do novo admin" className="flex-1 border border-zinc-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-red-400" value={newEmail} onChange={e => setNewEmail(e.target.value)} />
+            <button onClick={addAdmin} disabled={adding || !newEmail} className="bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-xl px-4 text-sm font-semibold flex items-center gap-1">
+              {adding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Adicionar
+            </button>
+          </div>
+        </Card>
+      )}
+      <Card>
+        {loading ? <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-zinc-400" /></div> : (
+          <div className="divide-y divide-zinc-100">
+            {admins.map(a => (
+              <div key={a.email} className="flex items-center justify-between px-5 py-4">
+                <div>
+                  <p className="text-sm font-medium text-zinc-900">{a.email}</p>
+                  <p className="text-xs text-zinc-400">{a.is_super ? 'Super Admin' : 'Admin'} · desde {fmtDate(a.created_at)}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {a.is_super && <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-semibold">Super</span>}
+                  {isSuperAdmin && !a.is_super && (
+                    <button onClick={() => removeAdmin(a.email)} className="p-1.5 hover:bg-red-50 rounded-lg text-red-500"><Trash2 className="w-4 h-4" /></button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+// ─── Página principal Admin ──────────────────────────────────────────
+const SECTIONS = [
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'users', label: 'Usuários', icon: Users },
+  { id: 'vehicles', label: 'Anúncios', icon: Car },
+  { id: 'highlights', label: 'Destaques', icon: Zap },
+  { id: 'admins', label: 'Administradores', icon: Shield },
+];
+
+export default function Admin() {
+  const navigate = useNavigate();
+  const { isAdmin, isSuperAdmin, loading: adminLoading } = useAdmin();
+  const [section, setSection] = useState('dashboard');
+  const [period, setPeriod] = useState('month');
+
+  useEffect(() => {
+    if (!adminLoading && !isAdmin) navigate('/');
+  }, [isAdmin, adminLoading]);
+
+  if (adminLoading) return (
+    <div className="fixed inset-0 flex items-center justify-center">
+      <Loader2 className="w-8 h-8 animate-spin text-red-600" />
+    </div>
+  );
+
+  if (!isAdmin) return null;
+
+  const current = SECTIONS.find(s => s.id === section);
+
+  return (
+    <div className="min-h-screen bg-zinc-50 flex">
+      {/* Sidebar */}
+      <div className="w-56 bg-white border-r border-zinc-200 flex flex-col fixed inset-y-0 left-0 z-20">
+        <div className="px-5 py-5 border-b border-zinc-100">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 bg-red-600 rounded-lg flex items-center justify-center">
+              <Shield className="w-4 h-4 text-white" />
+            </div>
+            <span className="font-bold text-zinc-900 text-sm">Admin</span>
+          </div>
+          <p className="text-xs text-zinc-400 mt-1">BuscaTurbo</p>
+        </div>
+        <nav className="flex-1 px-3 py-4 space-y-1">
+          {SECTIONS.map(s => {
+            const Icon = s.icon;
+            return (
+              <button key={s.id} onClick={() => setSection(s.id)} className={cn("w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors", section === s.id ? "bg-red-50 text-red-700" : "text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900")}>
+                <Icon className="w-4 h-4 flex-shrink-0" /> {s.label}
+              </button>
+            );
+          })}
+        </nav>
+        <div className="px-3 py-4 border-t border-zinc-100">
+          <button onClick={() => navigate('/')} className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium text-zinc-500 hover:bg-zinc-50 hover:text-zinc-800 transition-colors">
+            <ArrowUpRight className="w-4 h-4" /> Ver site
+          </button>
+          <button onClick={() => supabase.auth.signOut().then(() => navigate('/'))} className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium text-red-500 hover:bg-red-50 transition-colors">
+            <LogOut className="w-4 h-4" /> Sair
+          </button>
+        </div>
+      </div>
+
+      {/* Main content */}
+      <div className="ml-56 flex-1">
+        <div className="bg-white border-b border-zinc-200 px-6 py-4 flex items-center justify-between sticky top-0 z-10">
+          <h1 className="font-bold text-zinc-900">{current?.label}</h1>
+          {section === 'dashboard' && (
+            <div className="flex items-center gap-1 bg-zinc-100 rounded-xl p-1">
+              {PERIOD_OPTIONS.map(opt => (
+                <button key={opt.value} onClick={() => setPeriod(opt.value)} className={cn("px-3 py-1.5 rounded-lg text-xs font-medium transition-colors", period === opt.value ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700")}>
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="p-6">
+          {section === 'dashboard' && <Dashboard period={period} />}
+          {section === 'users' && <UsersPanel />}
+          {section === 'vehicles' && <VehiclesPanel />}
+          {section === 'highlights' && <HighlightsPanel />}
+          {section === 'admins' && <AdminsPanel isSuperAdmin={isSuperAdmin} />}
+        </div>
+      </div>
+    </div>
+  );
+}
